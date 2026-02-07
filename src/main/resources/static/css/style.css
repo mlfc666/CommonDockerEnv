@@ -8,6 +8,8 @@ html, body {
     margin: 0;
     padding: 0;
     width: 100%;
+    /* 核心修复：确保在所有环境下 body 不会因为 grid 溢出 */
+    height: 100vh;
     height: 100dvh;
     overflow: hidden;
     background: #1e1f22;
@@ -103,7 +105,8 @@ iframe {
     margin: 0;
     padding: 0;
     overflow: hidden;
-    transition: width 0.05s ease;
+    /* 核心修复：防止 iframe 底部 4px 像素间隙导致滚动失效 */
+    vertical-align: bottom;
 }
 
 /* 定义占位提示文字的对齐与颜色样式 */

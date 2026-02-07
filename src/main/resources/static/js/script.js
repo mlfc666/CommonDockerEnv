@@ -30,18 +30,27 @@ function updateUI(data) {
         iframe.onload = function() {
             console.log("终端已加载，准备执行布局校准...");
 
-            // 延迟三百毫秒执行物理校准逻辑
-            setTimeout(() => {
-                // 强制调整宽度触发重绘
-                iframe.style.width = '99%';
+            // 核心修复逻辑：校准函数
+            const calibrate = () => {
+                // 强制改变高度（减少1px再还原）以触发 iframe 内部 ttyd 的 resize 监听
+                iframe.style.height = 'calc(100% - 1px)';
 
-                // 短暂延迟后恢复原状并聚焦
                 setTimeout(() => {
-                    iframe.style.width = '100%';
-                    console.log("布局校准完成");
+                    iframe.style.height = '100%';
                     iframe.focus();
-                }, 50);
-            }, 300);
+                    // 尝试向内部发送标准的窗口 resize 事件
+                    if(iframe.contentWindow) {
+                        iframe.contentWindow.dispatchEvent(new Event('resize'));
+                    }
+                    console.log("布局校准完成");
+                }, 100);
+            };
+
+            // 第一次校准：立即执行
+            calibrate();
+
+            // 第二次校准：联网环境下 xterm 启动慢，500ms 后补刀校准，确保高度计算正确
+            setTimeout(calibrate, 600);
         };
 
         btn.innerText = "销毁容器环境";
