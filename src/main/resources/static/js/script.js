@@ -22,42 +22,55 @@ function updateUI(data) {
     if (data && data.sid) {
         envNameLabel.innerText = data.sid;
 
-        // 插入框架并禁止自带滚动
-        container.innerHTML = `<iframe src="${data.url}" scrolling="no" allow="clipboard-read; clipboard-write"></iframe>`;
-        const iframe = container.querySelector('iframe');
+        // 1. 创建 iframe
+        const iframe = document.createElement('iframe');
+        iframe.src = data.url;
+        iframe.setAttribute('scrolling', 'no');
+        iframe.setAttribute('allow', 'clipboard-read; clipboard-write');
 
-        // 监听加载完成事件以执行校准
-        iframe.onload = function() {
-            console.log("终端已加载，准备执行布局校准...");
+        container.innerHTML = '';
+        container.appendChild(iframe);
 
-            // 核心修复逻辑：校准函数
-            const calibrate = () => {
-                // 强制改变高度（减少1px再还原）以触发 iframe 内部 ttyd 的 resize 监听
-                iframe.style.height = 'calc(100% - 1px)';
+        // 2. 核心：定义一个高强度的“强制对齐”函数
+        const forceFit = () => {
+            if (!iframe.contentWindow) return;
+            console.log("正在强制终端对齐...");
 
-                setTimeout(() => {
-                    iframe.style.height = '100%';
-                    iframe.focus();
-                    // 尝试向内部发送标准的窗口 resize 事件
-                    if(iframe.contentWindow) {
-                        iframe.contentWindow.dispatchEvent(new Event('resize'));
-                    }
-                    console.log("布局校准完成");
-                }, 100);
-            };
+            // 触发内部窗口的 resize 事件，这是 ttyd 重新计算行数的唯一标准
+            iframe.contentWindow.dispatchEvent(new Event('resize'));
 
-            // 第一次校准：立即执行
-            calibrate();
-
-            // 第二次校准：联网环境下 xterm 启动慢，500ms 后补刀校准，确保高度计算正确
-            setTimeout(calibrate, 600);
+            // 额外保险：如果内部有 xterm 实例，尝试聚焦
+            iframe.contentWindow.focus();
+            iframe.focus();
         };
+
+        // 3. 监听容器尺寸变化 (解决 Grid 布局延迟问题)
+        const observer = new ResizeObserver(() => {
+            forceFit();
+        });
+        observer.observe(container);
+
+        // 4. 多阶段校准计划（应对不同的网络延迟阶段）
+        iframe.onload = () => {
+            // 阶段1：加载瞬间
+            forceFit();
+
+            // 阶段2：等待内部 WebSocket 握手可能引起的布局变动
+            setTimeout(forceFit, 500);
+
+            // 阶段3：最终保底校准
+            setTimeout(forceFit, 2000);
+        };
+
+        // 5. 交互：点击容器时也触发校准和聚焦
+        container.onclick = forceFit;
 
         btn.innerText = "销毁容器环境";
         btn.className = "action-btn btn-destroy";
         btn.onclick = destroyEnv;
         startTimer(parseInt(data.timeout));
     } else {
+        // ... (此处逻辑保持你原来的 updateUI(null) 部分不变)
         envNameLabel.innerText = "CommonEnv 容器";
         container.innerHTML = `<div class="placeholder"><p>环境已就绪</p><p style="font-size: 0.8em;">点击按钮开始</p></div>`;
         document.getElementById('timer').innerText = "剩余时间: --:--";
@@ -67,6 +80,7 @@ function updateUI(data) {
         clearInterval(timerInterval);
     }
 }
+
 
 async function spawnEnv() {
     const btn = document.getElementById('main-btn');

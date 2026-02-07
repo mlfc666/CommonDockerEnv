@@ -87,26 +87,25 @@ body {
     opacity: 0.5;
 }
 
-/* 设置终端容器定位方式并防止内容溢出 */
 #terminal-container {
-    position: relative;
+    position: relative; /* 基准 */
     width: 100%;
     height: 100%;
-    overflow: hidden;
     background: #1e1f22;
+    overflow: hidden;
 }
 
-/* 消除内联元素间隙并强制隐藏边框与滚动条 */
 iframe {
-    display: block;
+    position: absolute; /* 核心修改：绝对定位脱离 Grid 计算流 */
+    top: 0;
+    left: 0;
     width: 100%;
     height: 100%;
     border: none;
+    display: block;
     margin: 0;
     padding: 0;
-    overflow: hidden;
-    /* 核心修复：防止 iframe 底部 4px 像素间隙导致滚动失效 */
-    vertical-align: bottom;
+    background: #1e1f22;
 }
 
 /* 定义占位提示文字的对齐与颜色样式 */
