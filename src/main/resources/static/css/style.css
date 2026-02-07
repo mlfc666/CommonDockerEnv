@@ -1,0 +1,124 @@
+/* 设置全局盒模型计算方式 */
+* {
+    box-sizing: border-box;
+}
+
+/* 锁定视口高度并强制隐藏所有滚动行为 */
+html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100dvh;
+    overflow: hidden;
+    background: #1e1f22;
+    scrollbar-width: none;
+}
+
+/* 使用网格布局精准划分导航和终端区域 */
+body {
+    display: grid;
+    grid-template-rows: 60px 1fr;
+    grid-template-columns: 100%;
+}
+
+/* 设置导航栏背景颜色与基础布局方式 */
+.navbar {
+    background: #ffffff;
+    display: flex;
+    align-items: center;
+    padding: 0 20px;
+    justify-content: space-between;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    z-index: 100;
+    width: 100%;
+    height: 100%;
+}
+
+/* 定义导航栏左侧标题字体样式 */
+.nav-left {
+    font-weight: 800;
+    font-size: 1.1rem;
+    color: #1e1f22;
+}
+
+/* 设置导航栏右侧功能区域间距 */
+.nav-right {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+/* 定义倒计时文字的字体与背景样式 */
+#timer {
+    color: #666;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.85rem;
+    background: #f8f9fa;
+    padding: 4px 10px;
+    border-radius: 4px;
+    border: 1px solid #eee;
+}
+
+/* 设置操作按钮的基础交互样式 */
+.action-btn {
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 600;
+    color: white;
+    transition: opacity 0.2s;
+}
+
+/* 定义创建环境按钮的主体颜色 */
+.btn-create {
+    background: #007bff;
+}
+
+/* 定义销毁环境按钮的主体颜色 */
+.btn-destroy {
+    background: #ff4d4f;
+}
+
+/* 设置按钮处于禁用状态时的透明度 */
+.action-btn:disabled {
+    opacity: 0.5;
+}
+
+/* 设置终端容器定位方式并防止内容溢出 */
+#terminal-container {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #1e1f22;
+}
+
+/* 消除内联元素间隙并强制隐藏边框与滚动条 */
+iframe {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border: none;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    transition: width 0.05s ease;
+}
+
+/* 定义占位提示文字的对齐与颜色样式 */
+.placeholder {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: #6272a4;
+    text-align: center;
+}
+
+/* 全局隐藏所有基于内核浏览器的物理滚动条 */
+::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+}

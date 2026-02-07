@@ -1,0 +1,243 @@
+package moe.mlfc.onlinebot.commonenvdocker.services;
+
+import com.github.dockerjava.api.DockerClient;
+import com.github.dockerjava.api.command.CreateContainerResponse;
+import com.github.dockerjava.api.model.HostConfig;
+import com.github.dockerjava.api.model.PortBinding;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import moe.mlfc.onlinebot.commonenvdocker.configs.DockerProperties;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Service;
+
+import java.util.Arrays;
+import java.util.UUID;
+import java.util.concurrent.TimeUnit;
+
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class DockerService {
+
+    private final DockerClient dockerClient;
+    private final DockerProperties props;
+
+    public String createEnvironment() {
+        checkCapacity();
+        String imageTag = props.getImage();
+        ensureImageExists(imageTag);
+
+        String sid = "env-" + UUID.randomUUID().toString().substring(0, 8);
+        boolean isLocal = props.getBaseUrl().contains("localhost");
+
+        // 本地环境将路径设为根目录以防止出现路径错误
+        String basePath = isLocal ? "/" : "/" + sid + "/";
+        long expirationTimestamp = System.currentTimeMillis() + (props.getTimeoutSeconds() * 1000);
+
+        try {
+            // 构建主机配置并同时应用内存和处理器限制
+            HostConfig hostConfig = HostConfig.newHostConfig()
+                    .withNetworkMode(determineNetwork())
+                    .withAutoRemove(true)
+                    .withMemory(props.getMemoryLimit())
+                    .withMemorySwap(props.getMemoryLimit())
+                    .withCpuQuota(props.getCpuQuota());
+
+            if (isLocal) {
+                hostConfig.withPortBindings(PortBinding.parse("9999:7681"));
+            }
+
+            // 创建容器并直接使用java命令启动避免权限问题
+            CreateContainerResponse container = dockerClient.createContainerCmd(imageTag)
+                    .withName(sid)
+                    .withHostConfig(hostConfig)
+                    .withEntrypoint("ttyd")
+                    .withEnv("EXPIRATION_TIME=" + expirationTimestamp)
+                    .withCmd(buildTtydArgs(sid, basePath))
+                    .exec();
+
+            dockerClient.startContainerCmd(container.getId()).exec();
+
+            log.info("环境已就绪 SID为 {} 访问地址为 {}{}", sid, props.getBaseUrl(), isLocal ? "" : sid + "/");
+            return sid;
+        } catch (Exception e) {
+            log.error("容器启动失败", e);
+            throw new RuntimeException("服务启动失败 " + e.getMessage());
+        }
+    }
+
+    private String[] buildTtydArgs(String sid, String basePath) {
+        String javaCmd = "java -Xmx192m -Xms128m -XX:+UseSerialGC -jar /app/app.jar";
+        return new String[]{
+                "-p", "7681",
+                "-b", basePath,
+                "-W",
+                "-t", "titleFixed=" + sid,
+                "-t", "fontSize=15",
+                "-t", "lineHeight=1.3",
+                "-t", "cursorStyle=underline",
+                "-t", "cursorBlink=true",
+
+                // 关键配置配合前端Grid布局防止黑边
+                "-t", "padding=4",
+
+                "-t", "enableSixel=true",
+                "-t", "scrollback=2000",
+                "-t", "scrollOnUserInput=true",
+                "-t", "scrollOnOutput=true",
+
+                "-t", "theme=" + DRACULA_THEME,
+                "tmux", "new-session", "-A", "-s", "env_" + sid,
+                "stty intr undef; tmux set -g mouse on; tmux set status off; tmux bind-key -n C-c send-keys ''; " + javaCmd
+        };
+    }
+
+    @Scheduled(fixedRate = 60000)
+    public void autoCleanup() {
+        long now = System.currentTimeMillis();
+        dockerClient.listContainersCmd().exec().stream()
+                .filter(c -> c.getNames()[0].startsWith("/env-"))
+                .forEach(c -> {
+                    try {
+                        var inspect = dockerClient.inspectContainerCmd(c.getId()).exec();
+                        String[] envs = inspect.getConfig().getEnv();
+
+                        // 解析环境变量获取过期时间
+                        long expireAt = 0L;
+                        if (envs != null) {
+                            expireAt = Arrays.stream(envs)
+                                    .filter(e -> e.startsWith("EXPIRATION_TIME="))
+                                    .map(e -> Long.parseLong(e.split("=")[1]))
+                                    .findFirst().orElse(0L);
+                        }
+
+                        if (expireAt > 0 && now > expireAt) {
+                            dockerClient.removeContainerCmd(c.getId()).withForce(true).exec();
+                            log.info("已回收超时容器 {}", c.getNames()[0]);
+                        }
+                    } catch (Exception e) {
+                        log.warn("检查容器过期失败 ID为 {}", c.getId());
+                    }
+                });
+    }
+
+    @EventListener(ApplicationReadyEvent.class)
+    public void cleanUpOnStart() {
+        log.info("系统启动并执行初始化清理");
+        try {
+            dockerClient.listContainersCmd().withShowAll(true).exec().stream()
+                    .filter(c -> c.getNames()[0].startsWith("/env-"))
+                    .forEach(c -> {
+                        try {
+                            dockerClient.removeContainerCmd(c.getId()).withForce(true).exec();
+                        } catch (Exception ignored) {
+                        }
+                    });
+        } catch (Exception e) {
+            log.error("启动清理失败", e);
+        }
+    }
+
+    private String determineNetwork() {
+        try {
+            boolean exists = dockerClient.listNetworksCmd().exec().stream()
+                    .anyMatch(n -> n.getName().equals(props.getNetwork()));
+            return exists ? props.getNetwork() : "bridge";
+        } catch (Exception e) {
+            return "bridge";
+        }
+    }
+
+    private void ensureImageExists(String imageTag) {
+        // 如果镜像标签是 latest，或者你想确保每次都拿到 GitHub 构建后的最新版
+        // 我们应该直接执行 pull 命令，Docker 会自动比对摘要（Digest），有更新才会下载
+        try {
+            log.info("正在检查并尝试同步最新镜像: {}", imageTag);
+            dockerClient.pullImageCmd(imageTag)
+                    .start()
+                    .awaitCompletion(5, TimeUnit.MINUTES);
+            log.info("镜像同步完成: {}", imageTag);
+        } catch (Exception e) {
+            // 如果拉取失败（比如网络波动），尝试检查本地是否已经有旧镜像可以“垫背”运行
+            try {
+                dockerClient.inspectImageCmd(imageTag).exec();
+                log.warn("无法连接远程仓库，将使用本地缓存镜像启动: {}", imageTag);
+            } catch (Exception ex) {
+                log.error("远程拉取失败且本地无镜像备份: {}", imageTag);
+                throw new RuntimeException("无法获取所需镜像，请检查网络或配置");
+            }
+        }
+    }
+
+    private void checkCapacity() {
+        long count = dockerClient.listContainersCmd().withShowAll(true).exec().stream()
+                .filter(c -> c.getNames()[0].startsWith("/env-")).count();
+        if (count >= props.getMaxContainers()) {
+            throw new IllegalStateException("当前人数已满");
+        }
+    }
+
+    public boolean isContainerRunning(String sid) {
+        try {
+            dockerClient.inspectContainerCmd(sid).exec();
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    public long getRemainingSeconds(String sid) {
+        try {
+            var inspect = dockerClient.inspectContainerCmd(sid).exec();
+            String[] envs = inspect.getConfig().getEnv();
+            if (envs == null) return 0;
+
+            long expireAt = Arrays.stream(envs)
+                    .filter(e -> e.startsWith("EXPIRATION_TIME="))
+                    .map(e -> Long.parseLong(e.split("=")[1]))
+                    .findFirst().orElse(0L);
+
+            long remaining = (expireAt - System.currentTimeMillis()) / 1000;
+            return Math.max(remaining, 0);
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
+    public void destroyEnvironment(String sid) {
+        if (sid == null || sid.isEmpty()) return;
+        try {
+            // 强制移除容器确保资源释放
+            dockerClient.removeContainerCmd(sid).withForce(true).exec();
+            log.info("容器已成功销毁 {}", sid);
+        } catch (Exception e) {
+            log.warn("销毁容器时发生异常 {}", e.getMessage());
+        }
+    }
+
+    // 终端主题配色配置
+    private static final String DRACULA_THEME = "{" +
+            "'background': '#282a36'," +
+            "'foreground': '#f8f8f2'," +
+            "'cursor': '#ff79c6'," +
+            "'selection': '#44475a'," +
+            "'black': '#21222c'," +
+            "'red': '#ff5555'," +
+            "'green': '#50fa7b'," +
+            "'yellow': '#f1fa8c'," +
+            "'blue': '#bd93f9'," +
+            "'magenta': '#ff79c6'," +
+            "'cyan': '#8be9fd'," +
+            "'white': '#f8f8f2'," +
+            "'brightBlack': '#6272a4'," +
+            "'brightRed': '#ff6e6e'," +
+            "'brightGreen': '#69ff94'," +
+            "'brightYellow': '#ffffa5'," +
+            "'brightBlue': '#d6acff'," +
+            "'brightMagenta': '#ff92df'," +
+            "'brightCyan': '#a4ffff'," +
+            "'brightWhite': '#ffffff'" +
+            "}";
+}

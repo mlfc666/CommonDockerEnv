@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>CommonEnv 在线容器平台</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<nav class="navbar">
+    <div class="nav-left" id="env-name">CommonEnv 容器</div>
+    <div class="nav-right">
+        <div id="timer">剩余时间: --:--</div>
+        <button id="main-btn" class="action-btn btn-create" onclick="spawnEnv()">创建容器环境</button>
+    </div>
+</nav>
+
+<div id="terminal-container">
+    <div class="placeholder" id="placeholder-text">
+        <p>环境未就绪</p>
+        <p style="font-size: 0.8em;">点击上方按钮创建您的容器环境</p>
+    </div>
+</div>
+
+<script src="js/script.js"></script>
+</body>
+</html>

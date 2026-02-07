@@ -1,0 +1,26 @@
+spring:
+  profiles:
+    active: dev
+
+
+
+  task:
+    scheduling:
+          pool:
+            size: 2
+server:
+  port: 13232 # 后端运行端口
+
+app:
+  docker:
+    host: unix:///var/run/docker.sock
+    image: mlfc666/common-env:latest
+    network: 1panel-network
+    base-url: https://java.mlfc.moe/
+    max-containers: 4
+    # 20分钟 = 1200秒
+    timeout-seconds: 1200
+    memory-limit: 268435456 # 256 * 1024 * 1024
+    cpu-quota: 100000
+
+# 开启定时任务支持
