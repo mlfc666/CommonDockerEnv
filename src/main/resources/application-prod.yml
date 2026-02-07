@@ -1,13 +1,12 @@
 server:
-  port: 13232
+  port: 13232 # 后端运行端口
 
 app:
   docker:
     host: unix:///var/run/docker.sock
     image: mlfc666/common-env:latest
-    network: bridge
-    # 注意：本地测试跳转地址不要带 env-xxxx 路径，因为本地没有 Nginx 转发
-    base-url: http://localhost:9999
+    network: 1panel-network
+    base-url: https://java.mlfc.moe
     max-containers: 4
     # 20分钟 = 1200秒
     timeout-seconds: 1200
