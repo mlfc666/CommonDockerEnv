@@ -97,7 +97,7 @@ async function spawnEnv() {
         if (!res.ok) {
             const errData = await res.json();
             // 假设后端返回错误信息如 { "message": "达到容器限制" }
-            const errorMsg = errData.message || "服务器资源不足或达到容器创建上限";
+            const errorMsg = errData.error || "服务器资源不足或达到容器创建上限";
             showToast("创建失败: " + errorMsg, "error");
             return;
         }
