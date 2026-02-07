@@ -8,7 +8,7 @@ app:
     network: bridge
     # 注意：本地测试跳转地址不要带 env-xxxx 路径，因为本地没有 Nginx 转发
     base-url: http://localhost:9999
-    max-containers: 4
+    max-containers: 1
     # 20分钟 = 1200秒
     timeout-seconds: 1200
     memory-limit: 268435456 # 256 * 1024 * 1024
