@@ -90,16 +90,24 @@ async function spawnEnv() {
     const btn = document.getElementById('main-btn');
     btn.disabled = true;
     btn.innerText = "正在创建...";
+
     try {
         const res = await fetch('/api/v1/spawn', { method: 'POST' });
 
-        // 显式处理错误状态码
+        // 处理非 200 状态码 (包括 429, 403, 500 等)
         if (!res.ok) {
-            const errData = await res.json();
-            // 假设后端返回错误信息如 { "message": "达到容器限制" }
-            const errorMsg = errData.error || "服务器资源不足或达到容器创建上限";
-            showToast("创建失败: " + errorMsg, "error");
-            return;
+            let errorMsg = "服务器资源不足或达到创建上限";
+            try {
+                const errData = await res.json();
+                // 核心修复：同时兼容后端返回的 'error' 字段或 'message' 字段
+                errorMsg = errData.error || errData.message || errorMsg;
+            } catch (jsonErr) {
+                // 如果后端返回的不是 JSON 格式
+                console.error("解析错误响应失败", jsonErr);
+            }
+
+            showToast(errorMsg, "error"); // 这里的弹窗就会显示 "当前人数已满"
+            return; // 结束逻辑，不再向下执行
         }
 
         const data = await res.json();
@@ -108,10 +116,16 @@ async function spawnEnv() {
             updateUI(data);
         }
     } catch (e) {
+        console.error("请求崩溃:", e);
         showToast("网络请求异常，请检查网络连接", "error");
-        updateUI(null);
     } finally {
         btn.disabled = false;
+        // 如果是销毁状态变回来的，确保文字正确
+        const checkRes = await fetch('/api/v1/check');
+        const checkData = await checkRes.json();
+        if (!checkData.active) {
+            btn.innerText = "创建容器环境";
+        }
     }
 }
 
