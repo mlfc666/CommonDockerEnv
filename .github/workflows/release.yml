@@ -28,7 +28,7 @@ jobs:
 
       - name: Build with Gradle
         # 使用 build 命令会执行测试和打包，如果只要 jar 可以改为 ./gradlew jar
-        run: ./gradlew jar
+        run: ./gradlew bootJar
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
