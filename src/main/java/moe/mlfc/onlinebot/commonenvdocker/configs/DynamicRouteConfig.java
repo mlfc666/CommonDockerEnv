@@ -1,6 +1,5 @@
 package moe.mlfc.onlinebot.commonenvdocker.configs;
 
-import static org.springframework.cloud.gateway.server.mvc.filter.FilterFunctions.rewritePath;
 import static org.springframework.cloud.gateway.server.mvc.handler.GatewayRouterFunctions.route;
 import static org.springframework.cloud.gateway.server.mvc.handler.HandlerFunctions.http;
 
@@ -29,25 +28,22 @@ public class DynamicRouteConfig {
 
     @Bean
     public RouterFunction<ServerResponse> ttydProxyRoute() {
-        // 修复报错 2：调整 Gateway MVC 的链式调用顺序
-        // 在 Gateway MVC 中，handler (http()) 是作为 route 的参数传入的
         return route("ttyd_service")
+                // 匹配 /env-{sid}/**，但不重写路径
                 .route(RequestPredicates.path("/env-{sid}/**"), http())
-                .filter(rewritePath("/env-(?<sid>[^/]+)/(?<remaining>.*)", "/${remaining}"))
                 .before(request -> {
-                    try {
-                        String sid = request.pathVariable("sid");
-                        String containerIp = getContainerIpBySid("env-" + sid);
+                    String sid = request.pathVariable("sid");
+                    // 这里的 sid 是 env-xxxx
+                    String containerIp = getContainerIpBySid(sid);
 
-                        if (containerIp != null) {
-                            // 动态构建目标 URI
-                            URI targetUri = URI.create("http://" + containerIp + ":7681");
-                            return org.springframework.web.servlet.function.ServerRequest.from(request)
-                                    .uri(targetUri)
-                                    .build();
-                        }
-                    } catch (IllegalArgumentException e) {
-                        // 如果 pathVariable 中没有 sid，直接返回原请求
+                    if (containerIp != null) {
+                        // 直接转发，不修改 Path。
+                        // 比如请求 /env-xxxx/static/js/main.js
+                        // 转发到 http://172.18.0.x:7681/env-xxxx/static/js/main.js
+                        // 这样 ttyd 就能正确识别了
+                        return org.springframework.web.servlet.function.ServerRequest.from(request)
+                                .uri(URI.create("http://" + containerIp + ":7681"))
+                                .build();
                     }
                     return request;
                 })

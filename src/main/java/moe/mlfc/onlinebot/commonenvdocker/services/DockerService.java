@@ -29,15 +29,20 @@ public class DockerService {
         String imageTag = props.getImage();
         ensureImageExists(imageTag);
 
-        String sid = "env-" + UUID.randomUUID().toString().substring(0, 8);
+        // 这里的 sid 仅作为随机标识
+        String rawId = UUID.randomUUID().toString().substring(0, 8);
+        String sid = "env-" + rawId; // 最终容器名：env-xxxx
+
         boolean isLocal = props.getBaseUrl().contains("localhost");
 
-        // 本地环境将路径设为根目录以防止出现路径错误
-        String basePath = isLocal ? "/" : "/" + sid + "/";
+        // 生产环境下的 basePath 必须严格对应 Nginx 访问的路径
+        // 如果 Nginx 访问 https://domain.com/env-xxxx/
+        // 那么 ttyd 的 basePath 必须是 /env-xxxx (末尾不带斜杠，ttyd 会自动处理)
+        String basePath = isLocal ? "" : "/" + sid;
+
         long expirationTimestamp = System.currentTimeMillis() + (props.getTimeoutSeconds() * 1000);
 
         try {
-            // 构建主机配置并同时应用内存和处理器限制
             HostConfig hostConfig = HostConfig.newHostConfig()
                     .withNetworkMode(determineNetwork())
                     .withAutoRemove(true)
@@ -45,22 +50,23 @@ public class DockerService {
                     .withMemorySwap(props.getMemoryLimit())
                     .withCpuQuota(props.getCpuQuota());
 
+            // 生产环境不映射端口，走内网 IP 转发
             if (isLocal) {
                 hostConfig.withPortBindings(PortBinding.parse("9999:7681"));
             }
 
-            // 创建容器并直接使用java命令启动避免权限问题
             CreateContainerResponse container = dockerClient.createContainerCmd(imageTag)
-                    .withName(sid)
+                    .withName(sid) // 容器名 env-xxxx
                     .withHostConfig(hostConfig)
                     .withEntrypoint("ttyd")
                     .withEnv("EXPIRATION_TIME=" + expirationTimestamp)
+                    // 这里传入 sid 和处理后的 basePath
                     .withCmd(buildTtydArgs(sid, basePath))
                     .exec();
 
             dockerClient.startContainerCmd(container.getId()).exec();
 
-            log.info("环境已就绪 SID为 {} 访问地址为 {}{}", sid, props.getBaseUrl(), isLocal ? "" : sid + "/");
+            log.info("环境已就绪: {} -> {}{}/", sid, props.getBaseUrl(), sid);
             return sid;
         } catch (Exception e) {
             log.error("容器启动失败", e);
@@ -74,6 +80,7 @@ public class DockerService {
                 "-p", "7681",
                 "-b", basePath,
                 "-W",
+                "-a",
                 "-t", "titleFixed=" + sid,
                 "-t", "fontSize=15",
                 "-t", "lineHeight=1.3",
