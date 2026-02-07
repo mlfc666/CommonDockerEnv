@@ -4,6 +4,27 @@ let timerInterval = null;
 // 页面加载完成后检查环境状态
 window.onload = checkCurrentEnv;
 
+// --- 新增：手动修复显示函数 ---
+function repairDisplay() {
+    const iframe = document.querySelector('#terminal-container iframe');
+    if (iframe) {
+        console.log("正在执行手动校准...");
+        // 强制触发重绘
+        iframe.style.width = '98%';
+        setTimeout(() => {
+            iframe.style.width = '100%';
+            iframe.focus();
+            // 如果同源，尝试触发内部 resize
+            try {
+                if (iframe.contentWindow) {
+                    iframe.contentWindow.dispatchEvent(new Event('resize'));
+                }
+            } catch(e) {}
+            console.log("手动校准完成");
+        }, 150);
+    }
+}
+
 async function checkCurrentEnv() {
     try {
         const res = await fetch('/api/v1/check');
@@ -16,62 +37,35 @@ async function checkCurrentEnv() {
 
 function updateUI(data) {
     const btn = document.getElementById('main-btn');
+    const repairBtn = document.getElementById('repair-btn'); // 获取修复按钮
     const envNameLabel = document.getElementById('env-name');
     const container = document.getElementById('terminal-container');
 
     if (data && data.sid) {
         envNameLabel.innerText = data.sid;
+        repairBtn.style.display = "block"; // 显示修复按钮
 
-        // 1. 创建 iframe
-        const iframe = document.createElement('iframe');
-        iframe.src = data.url;
-        iframe.setAttribute('scrolling', 'no');
-        iframe.setAttribute('allow', 'clipboard-read; clipboard-write');
+        container.innerHTML = `<iframe src="${data.url}" scrolling="no" allow="clipboard-read; clipboard-write"></iframe>`;
+        const iframe = container.querySelector('iframe');
 
-        container.innerHTML = '';
-        container.appendChild(iframe);
-
-        // 2. 核心：定义一个高强度的“强制对齐”函数
-        const forceFit = () => {
-            if (!iframe.contentWindow) return;
-            console.log("正在强制终端对齐...");
-
-            // 触发内部窗口的 resize 事件，这是 ttyd 重新计算行数的唯一标准
-            iframe.contentWindow.dispatchEvent(new Event('resize'));
-
-            // 额外保险：如果内部有 xterm 实例，尝试聚焦
-            iframe.contentWindow.focus();
-            iframe.focus();
+        iframe.onload = function() {
+            // 保留你原来的自动校准
+            setTimeout(() => {
+                iframe.style.width = '99%';
+                setTimeout(() => {
+                    iframe.style.width = '100%';
+                    iframe.focus();
+                }, 50);
+            }, 300);
         };
-
-        // 3. 监听容器尺寸变化 (解决 Grid 布局延迟问题)
-        const observer = new ResizeObserver(() => {
-            forceFit();
-        });
-        observer.observe(container);
-
-        // 4. 多阶段校准计划（应对不同的网络延迟阶段）
-        iframe.onload = () => {
-            // 阶段1：加载瞬间
-            forceFit();
-
-            // 阶段2：等待内部 WebSocket 握手可能引起的布局变动
-            setTimeout(forceFit, 500);
-
-            // 阶段3：最终保底校准
-            setTimeout(forceFit, 2000);
-        };
-
-        // 5. 交互：点击容器时也触发校准和聚焦
-        container.onclick = forceFit;
 
         btn.innerText = "销毁容器环境";
         btn.className = "action-btn btn-destroy";
         btn.onclick = destroyEnv;
         startTimer(parseInt(data.timeout));
     } else {
-        // ... (此处逻辑保持你原来的 updateUI(null) 部分不变)
         envNameLabel.innerText = "CommonEnv 容器";
+        repairBtn.style.display = "none"; // 隐藏修复按钮
         container.innerHTML = `<div class="placeholder"><p>环境已就绪</p><p style="font-size: 0.8em;">点击按钮开始</p></div>`;
         document.getElementById('timer').innerText = "剩余时间: --:--";
         btn.innerText = "创建容器环境";
@@ -81,7 +75,7 @@ function updateUI(data) {
     }
 }
 
-
+// spawnEnv, destroyEnv, startTimer 函数保持不变...
 async function spawnEnv() {
     const btn = document.getElementById('main-btn');
     btn.disabled = true;
