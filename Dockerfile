@@ -1,11 +1,10 @@
 FROM eclipse-temurin:17-jre-alpine
 
-# 安装 ttyd, tmux 和 coreutils (stty)
-RUN apk add --no-cache ttyd tmux coreutils
+RUN apk add --no-cache ttyd tmux coreutils docker-cli
 
 WORKDIR /app
 
-# 直接拷贝根目录下的 app.jar
+# 这里的 app.jar 是 Workflow 搬运过来的
 COPY app.jar app.jar
 
 ENV SPRING_PROFILES_ACTIVE=prod
