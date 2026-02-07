@@ -224,6 +224,44 @@ public class DockerService {
         }
     }
 
+    // 根据容器名称获取其在指定网络中的内网 IP
+    public String getContainerIpBySid(String sid) {
+        try {
+            // 1获取容器列表，使用名称过滤
+            var containers = dockerClient.listContainersCmd()
+                    .withNameFilter(java.util.Collections.singletonList(sid))
+                    .exec();
+
+            if (containers == null || containers.isEmpty()) {
+                log.warn("未找到名为 {} 的容器", sid);
+                return null;
+            }
+
+            // 获取第一个匹配的容器元数据
+            var container = containers.get(0);
+            var networkSettings = container.getNetworkSettings();
+            if (networkSettings == null) return null;
+
+            var networks = networkSettings.getNetworks();
+            if (networks == null || networks.isEmpty()) return null;
+
+            // 优先获取配置文件中指定的网络 IP (如 1panel-network)
+            var targetNetwork = networks.get(props.getNetwork());
+
+            // 如果找不到指定网络，则尝试获取第一个可用的网络 IP
+            if (targetNetwork == null) {
+                targetNetwork = networks.values().iterator().next();
+            }
+
+            String ip = targetNetwork.getIpAddress();
+            log.debug("获取容器 {} IP 成功: {}", sid, ip);
+            return ip;
+        } catch (Exception e) {
+            log.error("获取容器 {} IP 时发生异常: {}", sid, e.getMessage());
+            return null;
+        }
+    }
+
     // 终端主题配色配置
     private static final String DRACULA_THEME = "{" +
             "'background': '#282a36'," +
