@@ -13,6 +13,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.function.RequestPredicates;
 import org.springframework.web.servlet.function.RouterFunction;
 import org.springframework.web.servlet.function.ServerResponse;
+import org.springframework.web.util.UriComponentsBuilder;
 
 import java.net.URI;
 import java.util.Collections;
@@ -31,30 +32,29 @@ public class DynamicRouteConfig {
     @Bean
     public RouterFunction<ServerResponse> ttydProxyRoute() {
         return route("ttyd_service")
-                // 注意：这里我们匹配整个 /env-xxxx 路径
                 .route(RequestPredicates.path("/env-{sid}/**"), http())
                 .before(request -> {
                     String sid = request.pathVariable("sid");
-
-                    // 【修正 1】：容器名需要加上 env- 前缀，因为图片显示容器名是 env-777b12fc
                     String fullContainerName = "env-" + sid;
                     String containerIp = getContainerIpBySid(fullContainerName);
 
                     if (containerIp == null) {
-                        log.error("路由转发失败：找不到容器 {} 的 IP", fullContainerName);
-                        // 如果找不到 IP，不再返回 request 导致 404/500，这里让它由于没有 URI 而自然报错或你可以抛出异常
+                        log.error("无法找到容器 IP: {}", fullContainerName);
                         return request;
                     }
 
-                    // 【修正 2】：构建目标 URI。ttyd 已经在容器内监听 7681
-                    // 保持路径完整转发（不重写），因为 ttyd 启动参数带了 -b /env-xxxx
-                    URI targetUri = URI.create("http://" + containerIp + ":7681");
+                    // 如果原始请求是 wss 或 ws，目标也应该是 ws
+                    String upgradeHeader = request.headers().firstHeader("Upgrade");
+                    String scheme = (upgradeHeader != null && upgradeHeader.equalsIgnoreCase("websocket"))
+                            ? "ws" : "http";
 
-                    log.info("转发成功: {} -> {}", request.path(), targetUri);
+                    URI targetUri = UriComponentsBuilder.fromUriString(scheme + "://" + containerIp + ":7681")
+                            .build().toUri();
 
-                    // 【修正 3】：这是 Gateway MVC 必须设置的属性，用于告诉底层的 http() 处理器去哪里
+                    // 必须设置这个属性，Gateway MVC 才能正确执行转发
                     request.attributes().put(MvcUtils.GATEWAY_REQUEST_URL_ATTR, targetUri);
 
+                    log.info("WebSocket/HTTP 转发: {} -> {}", request.path(), targetUri);
                     return request;
                 })
                 .build();
