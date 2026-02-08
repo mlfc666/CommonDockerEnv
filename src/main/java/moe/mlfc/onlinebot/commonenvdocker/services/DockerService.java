@@ -158,22 +158,22 @@ public class DockerService {
     }
 
     private void ensureImageExists(String imageTag) {
-        // 如果镜像标签是 latest，或者你想确保每次都拿到 GitHub 构建后的最新版
-        // 我们应该直接执行 pull 命令，Docker 会自动比对摘要（Digest），有更新才会下载
         try {
-            log.info("正在检查并尝试同步最新镜像: {}", imageTag);
-            dockerClient.pullImageCmd(imageTag)
-                    .start()
-                    .awaitCompletion(5, TimeUnit.MINUTES);
-            log.info("镜像同步完成: {}", imageTag);
+            dockerClient.inspectImageCmd(imageTag).exec();
+            log.info("本地已存在镜像: {}", imageTag);
         } catch (Exception e) {
-            // 如果拉取失败（比如网络波动），尝试检查本地是否已经有旧镜像可以“垫背”运行
+            // 本地不存在时，才执行拉取动作
+            log.info("本地不存在镜像，正在尝试从远程拉取: {}", imageTag);
             try {
-                dockerClient.inspectImageCmd(imageTag).exec();
-                log.warn("无法连接远程仓库，将使用本地缓存镜像启动: {}", imageTag);
+                dockerClient.pullImageCmd(imageTag)
+                        .start()
+                        .awaitCompletion(5, TimeUnit.MINUTES);
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException("拉取镜像被中断");
             } catch (Exception ex) {
-                log.error("远程拉取失败且本地无镜像备份: {}", imageTag);
-                throw new RuntimeException("无法获取所需镜像，请检查网络或配置");
+                log.error("镜像拉取失败: {}", imageTag);
+                throw new RuntimeException("无法获取所需镜像: " + imageTag);
             }
         }
     }
