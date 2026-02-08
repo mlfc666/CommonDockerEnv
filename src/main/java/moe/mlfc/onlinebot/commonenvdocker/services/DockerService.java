@@ -75,7 +75,10 @@ public class DockerService {
     }
 
     private String[] buildTtydArgs(String sid, String basePath) {
+        // 显式设置环境变量 TERM 和 LANG，确保字符集和颜色正确
+        String envPrefix = "export TERM=xterm-256color; export LANG=C.UTF-8; ";
         String javaCmd = "java -Xmx192m -Xms128m -XX:+UseSerialGC -jar /app/app.jar";
+
         return new String[]{
                 "-p", "7681",
                 "-b", basePath,
@@ -86,18 +89,20 @@ public class DockerService {
                 "-t", "lineHeight=1.3",
                 "-t", "cursorStyle=underline",
                 "-t", "cursorBlink=true",
-
-                // 关键配置配合前端Grid布局防止黑边
                 "-t", "padding=4",
-
                 "-t", "enableSixel=true",
                 "-t", "scrollback=2000",
                 "-t", "scrollOnUserInput=true",
                 "-t", "scrollOnOutput=true",
-
                 "-t", "theme=" + DRACULA_THEME,
-                "tmux", "new-session", "-A", "-s", "env_" + sid,
-                "stty intr undef; tmux set -g mouse on; tmux set status off; tmux bind-key -n C-c send-keys ''; " + javaCmd
+
+                // 加上 -2 参数，强制 tmux 开启 256 色模式
+                "tmux", "-2", "new-session", "-A", "-s", "env_" + sid,
+
+                // 在启动 java 之前先执行环境配置
+                "stty intr undef; tmux set -g mouse on; tmux set status off; " +
+                        "tmux bind-key -n C-c send-keys ''; " +
+                        envPrefix + javaCmd
         };
     }
 
