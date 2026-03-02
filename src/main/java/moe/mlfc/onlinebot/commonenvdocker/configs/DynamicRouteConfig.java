@@ -63,21 +63,39 @@ public class DynamicRouteConfig {
     @Bean
     public RouterFunction<ServerResponse> webAppProxyRoute() {
         return route("web_app_service")
-                // 匹配 /web-xxxx/**
                 .route(RequestPredicates.path("/web-{sid}/**"), http())
                 .before(request -> {
                     String sid = request.pathVariable("sid");
                     String fullContainerName = "env-" + sid;
                     String containerIp = getContainerIpBySid(fullContainerName);
 
-                    if (containerIp == null) return request;
+                    if (containerIp == null) {
+                        log.error("Web代理失败，找不到容器 IP: {}", fullContainerName);
+                        return request;
+                    }
 
-                    // 转发到容器内的 Java Web 端口（假设为 8080）
+                    // --- 核心修复：路径剥离逻辑 ---
+                    // 1. 获取原始路径，例如 "/web-e7af738c/index.html" 或 "/web-e7af738c"
+                    String rawPath = request.uri().getPath();
+
+                    // 2. 剥离 "/web-{sid}" 前缀
+                    String newPath = rawPath.replaceFirst("^/web-" + sid, "");
+
+                    // 3. 确保路径不为空。如果是空字符串，则设为根路径 "/"
+                    if (newPath == null || newPath.isEmpty()) {
+                        newPath = "/";
+                    }
+
+                    // 4. 构造目标 URI，指向容器的 8080 端口
                     URI targetUri = UriComponentsBuilder.fromUriString("http://" + containerIp + ":8080")
+                            .path(newPath)
+                            .query(request.uri().getQuery()) // 保留查询参数
                             .build().toUri();
 
+                    // 设置 Gateway 转发目标
                     request.attributes().put(MvcUtils.GATEWAY_REQUEST_URL_ATTR, targetUri);
-                    log.info("Web 应用转发: {} -> {}", request.path(), targetUri);
+
+                    log.info("Web 转发成功: {} -> {}", rawPath, targetUri);
                     return request;
                 })
                 .build();
