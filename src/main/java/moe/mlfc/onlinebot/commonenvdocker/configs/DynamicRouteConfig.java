@@ -60,6 +60,29 @@ public class DynamicRouteConfig {
                 .build();
     }
 
+    @Bean
+    public RouterFunction<ServerResponse> webAppProxyRoute() {
+        return route("web_app_service")
+                // 匹配 /web-xxxx/**
+                .route(RequestPredicates.path("/web-{sid}/**"), http())
+                .before(request -> {
+                    String sid = request.pathVariable("sid");
+                    String fullContainerName = "env-" + sid;
+                    String containerIp = getContainerIpBySid(fullContainerName);
+
+                    if (containerIp == null) return request;
+
+                    // 转发到容器内的 Java Web 端口（假设为 8080）
+                    URI targetUri = UriComponentsBuilder.fromUriString("http://" + containerIp + ":8080")
+                            .build().toUri();
+
+                    request.attributes().put(MvcUtils.GATEWAY_REQUEST_URL_ATTR, targetUri);
+                    log.info("Web 应用转发: {} -> {}", request.path(), targetUri);
+                    return request;
+                })
+                .build();
+    }
+
     private String getContainerIpBySid(String containerName) {
         try {
             // Docker 容器名在 API 中通常带有前缀 /
