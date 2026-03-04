@@ -24,11 +24,11 @@ CommonEnv 在线容器平台 - 开发文档
 ## 2. 项目架构与类/接口说明
 
 ### 2.1 配置层 (Configs)
-| 类名称 | 职责说明 | 关键点 |
-| :--- | :--- | :--- |
-| `DockerProperties` | 配置映射类 | 绑定 `app.docker` 前缀，管理镜像名、内网、资源限制及超时时长 |
-| `DockerConfig` | 客户端工厂 | 封装 Apache HttpClient 5，构建单例 `DockerClient` 连接引擎 |
-| `DynamicRouteConfig` | 动态路由层 | 使用 Spring Cloud Gateway MVC 拦截 `/env-{sid}/**` 并转发至对应 IP |
+| 类名称 | 职责说明 | 关键点                                                          |
+| :--- | :--- |:-------------------------------------------------------------|
+| `DockerProperties` | 配置映射类 | 绑定 `app.docker` 前缀，管理镜像名、内网、资源限制及超时时长                        |
+| `DockerConfig` | 客户端工厂 | 封装 Apache HttpClient 5，构建单例 `DockerClient` 连接引擎              |
+| `DynamicRouteConfig` | 动态路由层 | 使用 Spring Cloud Gateway MVC 实现双路径拦截：终端转发（7681）与 Web应用转发（8080）|
 
 ### 2.2 业务逻辑层 (Services)
 | 类名称 | 职责说明 | 关键点 |
@@ -66,14 +66,21 @@ CommonEnv 在线容器平台 - 开发文档
     4.  判断请求头 `Upgrade` 是否为 `websocket`，动态切换 `ws://` 或 `http://` 协议。
     5.  利用 `MvcUtils.GATEWAY_REQUEST_URL_ATTR` 将目标地址注入转发链。
 
-### 3.3 前端布局校准 (Layout Calibration)
+### 3.3 Web 应用转发与路径剥离
+*   **逻辑说明**：
+    1. 拦截路径模式 `/web-{sid}/`,提取 sid 并查询容器内网 IP。
+    2. 使用正则表达式 `replaceFirst` 剥离请求路径中的 `web-sid` 部分。
+    3. 将剥离后的路径（如 `/api/test`）转发至容器 8080 端口。
+    4. 1.  用户通过 `domain/web-sid/` 访问容器网页。
+
+### 3.4 前端布局校准
 *   **问题背景**：iframe 在首次加载 ttyd 时，由于 DOM 渲染时机问题，终端字符矩阵常出现黑边或排列错乱。
 *   **解决方案**：
     *   在 `iframe.onload` 触发后延迟 300ms。
     *   先将 iframe 宽度修改为 `99%` 强制触发浏览器重绘。
     *   50ms 后恢复 `100%` 并调用 `.focus()` 确保键盘事件能立即被终端捕获。
 
-### 3.4 自动化回收机制
+### 3.5 自动化回收机制
 *   **逻辑说明**：
     *   **定时清理**：每 60 秒遍历所有前缀为 `/env-` 的容器，提取其 `EXPIRATION_TIME` 环境变量，与系统当前时间戳比对。
     *   **强力销毁**：通过 `withForce(true)` 确保即使容器进程卡死也能被物理移除，释放内存占用。

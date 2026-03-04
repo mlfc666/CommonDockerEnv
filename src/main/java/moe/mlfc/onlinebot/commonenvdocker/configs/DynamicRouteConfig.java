@@ -6,6 +6,7 @@ import static org.springframework.cloud.gateway.server.mvc.handler.HandlerFuncti
 import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.model.Container;
 import com.github.dockerjava.api.model.ContainerNetwork;
+import com.github.dockerjava.api.model.ContainerNetworkSettings;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cloud.gateway.server.mvc.common.MvcUtils;
 import org.springframework.context.annotation.Bean;
@@ -17,7 +18,6 @@ import org.springframework.web.util.UriComponentsBuilder;
 
 import java.net.URI;
 import java.util.Collections;
-import java.util.Map;
 
 @Slf4j
 @Configuration
@@ -62,7 +62,7 @@ public class DynamicRouteConfig {
 
     @Bean
     public RouterFunction<ServerResponse> webAppProxyRoute() {
-        return route("web_app_service")
+        return route("web_service")
                 .route(RequestPredicates.path("/web-{sid}/**"), http())
                 .before(request -> {
                     String sid = request.pathVariable("sid");
@@ -74,19 +74,18 @@ public class DynamicRouteConfig {
                         return request;
                     }
 
-                    // --- 核心修复：路径剥离逻辑 ---
-                    // 1. 获取原始路径，例如 "/web-e7af738c/index.html" 或 "/web-e7af738c"
+                    // 获取原始路径，例如 "/web-e7af738c/index.html" 或 "/web-e7af738c"
                     String rawPath = request.uri().getPath();
 
-                    // 2. 剥离 "/web-{sid}" 前缀
+                    // 剥离 "/web-{sid}" 前缀
                     String newPath = rawPath.replaceFirst("^/web-" + sid, "");
 
-                    // 3. 确保路径不为空。如果是空字符串，则设为根路径 "/"
-                    if (newPath == null || newPath.isEmpty()) {
+                    // 确保路径不为空。如果是空字符串，则设为根路径 "/"
+                    if (newPath.isEmpty()) {
                         newPath = "/";
                     }
 
-                    // 4. 构造目标 URI，指向容器的 8080 端口
+                    // 构造目标 URI，指向容器的 8080 端口
                     URI targetUri = UriComponentsBuilder.fromUriString("http://" + containerIp + ":8080")
                             .path(newPath)
                             .query(request.uri().getQuery()) // 保留查询参数
@@ -103,31 +102,26 @@ public class DynamicRouteConfig {
 
     private String getContainerIpBySid(String containerName) {
         try {
-            // Docker 容器名在 API 中通常带有前缀 /
             var containers = dockerClient.listContainersCmd()
-                    .withNameFilter(Collections.singletonList(containerName))
-                    .exec();
+                    .withNameFilter(Collections.singletonList(containerName)).exec();
 
+            // 如果按原名找不到，尝试带斜杠的名称
             if (containers == null || containers.isEmpty()) {
-                // 尝试模糊匹配，防止名字里带斜杠的问题
                 containers = dockerClient.listContainersCmd()
-                        .withNameFilter(Collections.singletonList("/" + containerName))
-                        .exec();
+                        .withNameFilter(Collections.singletonList("/" + containerName)).exec();
             }
 
-            if (containers == null || containers.isEmpty()) return null;
+            // 使用 Optional 链式操作消除所有 null 检查
+            return java.util.Optional.ofNullable(containers)
+                    .filter(c -> !c.isEmpty())
+                    .map(c -> c.get(0))
+                    .map(Container::getNetworkSettings)
+                    .map(ContainerNetworkSettings::getNetworks)
+                    .map(networks -> networks.getOrDefault("1panel-network",
+                            networks.values().stream().findFirst().orElse(null)))
+                    .map(ContainerNetwork::getIpAddress)
+                    .orElse(null);
 
-            Container container = containers.get(0);
-            Map<String, ContainerNetwork> networks = container.getNetworkSettings().getNetworks();
-
-            // 从图片看，你的网络应该是 1panel-network
-            ContainerNetwork net = networks.get("1panel-network");
-            if (net == null) {
-                // 备选计划：取第一个可用的网络
-                net = networks.values().stream().findFirst().orElse(null);
-            }
-
-            return (net != null) ? net.getIpAddress() : null;
         } catch (Exception e) {
             log.error("Docker 获取 IP 出错: {}", e.getMessage());
             return null;
