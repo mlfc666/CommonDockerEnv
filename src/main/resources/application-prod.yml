@@ -10,7 +10,7 @@ app:
     max-containers: 4
     # 20分钟 = 1200秒
     timeout-seconds: 1200
-    memory-limit: 268435456 # 256 * 1024 * 1024
+    memory-limit: 536870912 # 512 * 1024 * 1024
     cpu-quota: 100000
 
 spring:
